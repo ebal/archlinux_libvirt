@@ -1,0 +1,6 @@
+version: 2
+ethernets:
+  # Arch cloud image boots with net.ifnames=0, so the NIC is always eth0.
+  # cloud-init's networkd renderer ignores match globs, name it directly.
+  eth0:
+    dhcp4: true

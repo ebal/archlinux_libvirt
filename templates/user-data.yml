@@ -1,0 +1,81 @@
+#cloud-config
+
+# Disable root user
+disable_root: true
+
+# Disable SSH password authentication
+ssh_pwauth: false
+
+# Create user with SSH keys fetched from GitHub
+users:
+  - name: ${gh_user}
+    ssh_authorized_keys: ${ssh_keys}
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+%{ if password_hash != "" ~}
+    lock_passwd: false
+    passwd: "${password_hash}"
+%{ endif ~}
+
+write_files:
+  # Configure SSH Daemon
+  - path: /etc/ssh/sshd_config
+    content: |
+      ${sshd_config}
+
+  # Shell alias, appended to the default Arch .bash_profile
+  - path: /home/${gh_user}/.bash_profile
+    defer: true
+    append: true
+    owner: ${gh_user}:${gh_user}
+    content: |
+      alias sup="sudo -i"
+
+  # Package cleanup script
+  - path: /root/cleanup.sh
+    permissions: '0755'
+    content: |
+      ${cleanup}
+
+%{ if share_logs ~}
+# Mount the host ./logs share (see share_logs in locals.tf)
+mounts:
+  - [ shared, /mnt/logs, 9p, "trans=virtio,version=9p2000.L,ro,nofail", "0", "0" ]
+
+%{ endif ~}
+# Set TimeZone
+timezone: "${timezone}"
+
+# Set Hostname
+hostname: "${hostname}"
+
+# Install packages
+packages:
+  - curl
+  - figlet
+  - jq
+  - less
+  - ncdu
+  - plocate
+  - qemu-guest-agent
+  - vim
+
+# Update/Upgrade, the final reboot in runcmd picks up a new kernel
+package_update: true
+package_upgrade: true
+
+runcmd:
+  # Log start date/time
+  - date -R > /root/Start.txt
+  # Set Hostname in /etc/motd
+  - figlet "${hostname}" > /etc/motd
+  # Validate and restart SSH service - we changed sshd_config !
+  - sshd -t && systemctl restart sshd && systemctl enable sshd
+  # Rebuild locate database
+  - updatedb
+  # Log finish date/time
+  - date -R > /root/Finish.txt
+  # Clean package cache & disable cloud-init
+  - /root/cleanup.sh
+  # final reboot
+  - reboot
